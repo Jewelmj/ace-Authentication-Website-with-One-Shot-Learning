@@ -1,4 +1,5 @@
 1) the api folder can act like a stand alone folder, where you can run the "app.py" file and the api works.
 note: the api assumes the data base and 3 tables exisit in the sql server (please update the server connection details as well).
 
-2) 
+2) main.ipynb is the jupeter notebook where i do the preprocessing and model creating step by step. 
+note: Jupiter notebook was not supporting multiple workers in dataloader (which slows down the training processes) , thus the separate python files "model_tuning.py", 'datacleaning.py" and 'model_test.py" where made, for fast modeling utilising more cpu potential.
