@@ -3,3 +3,5 @@ note: the api assumes the data base and 3 tables exisit in the sql server (pleas
 
 2) main.ipynb is the jupeter notebook where i do the preprocessing and model creating step by step. 
 note: Jupiter notebook was not supporting multiple workers in dataloader (which slows down the training processes) , thus the separate python files "model_tuning.py", 'datacleaning.py" and 'model_test.py" where made, for fast modeling utilising more cpu potential.
+
+3) original_dataset contains the original dataset after changing folder name (in mian.ipynb) , dataset_test and dataset_train are the datasets used for training the model.
