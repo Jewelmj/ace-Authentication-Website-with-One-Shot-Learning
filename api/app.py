@@ -1,13 +1,15 @@
-from flask import Flask, Response, render_template, request, redirect, url_for,jsonify
+from flask import Flask, Response, render_template, request,jsonify
+import pyodbc
 import cv2
 from PIL import Image
 import os
+import shutil
 import numpy as np
-import base64
 import torch
 import torch.nn as nn
-from torchvision import transforms, models
 import torch.nn.functional as F
+from torchvision import transforms, models
+from mtcnn import MTCNN
 import pickle
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -35,19 +37,6 @@ class SiameseNetwork(nn.Module):
             nn.Dropout(0.5)
         )
 
-        self.authorized_embeddings = {}
-        try:
-            with open(r'static/admin_user\admin_embeddings.pkl', 'rb') as f:
-                self.admin_embeddings = pickle.load(f)
-
-            with open(r'static/admin_user\admin_details.pkl', 'rb') as f:
-                self.admin_details = pickle.load(f)
-            print('load_old_suses')
-        except FileNotFoundError:
-            self.admin_embeddings = {}
-            self.admin_details = {}
-
-
     def forward_one(self, x):
         embedding = self.resnet(x)  
         return F.normalize(embedding, p=2, dim=1)
@@ -56,32 +45,130 @@ class SiameseNetwork(nn.Module):
         output1 = self.forward_one(input1)
         output2 = self.forward_one(input2)
         return output1, output2
+    
+class Load_sql():
+    def __init__(self):
+        connection_string = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER=Jewel;DATABASE=User_Face_verification_system;Trusted_Connection=yes;'
+        self.connection = pyodbc.connect(connection_string)
+        self.cursor = self.connection.cursor()
 
-    def autherise_user(self, image, name,admin_bool=False,admin_dict={}):
-        self.eval()
+        try:
+            with open(r'static/visiter_user\visiter_embeddings.pkl', 'rb') as f:
+                self.visiter_embeddings = pickle.load(f)
+        except FileNotFoundError:
+            self.visiter_embeddings = {}
+        try:
+            with open(r'static/authorized_user\authorized_embeddings.pkl', 'rb') as f:
+                self.authorized_embeddings = pickle.load(f)
+        except FileNotFoundError:
+            self.authorized_embeddings = {}
+        try:
+            with open(r'static/admin_user\admin_embeddings.pkl', 'rb') as f:
+                self.admin_embeddings = pickle.load(f)
+        except FileNotFoundError:
+            self.admin_embeddings = {}
+        try:
+            temp_list = ['major' , 'id_number', 'email', 'address', 'phone','linkedin','image_src']
+            self.cursor.execute('SELECT * FROM UserAdmin')
+            rows = self.cursor.fetchall() 
+            self.admin_details = {} 
+            for i in range(len(rows)):
+                temp_dict = {}
+                for j in range(len(rows[i][2:])):
+                    temp_dict[temp_list[j]] = rows[i][2:][j]
+                self.admin_details[rows[i][1]] = temp_dict
+        except FileNotFoundError:
+            self.admin_details = {}
+        try:
+            temp_list = ['major' , 'id_number', 'email', 'address', 'phone','linkedin','image_src']
+            self.cursor.execute('SELECT * FROM UserStudent')
+            rows = self.cursor.fetchall() 
+            self.authorized_details = {} 
+            for i in range(len(rows)):
+                temp_dict = {}
+                for j in range(len(rows[i][2:])):
+                    temp_dict[temp_list[j]] = rows[i][2:][j]
+                self.authorized_details[rows[i][1]] = temp_dict
+        except FileNotFoundError:
+            self.authorized_details = {}
+        try:
+            temp_list = ['major' , 'id_number', 'email', 'address', 'phone','linkedin','image_src']
+            self.cursor.execute('SELECT * FROM UserVisiter')
+            rows = self.cursor.fetchall() 
+            self.visiter_details = {} 
+            for i in range(len(rows)):
+                temp_dict = {}
+                for j in range(len(rows[i][2:])):
+                    temp_dict[temp_list[j]] = rows[i][2:][j]
+                self.visiter_details[rows[i][1]] = temp_dict
+        except FileNotFoundError:
+            self.visiter_details = {}
+
+    def autherise_user(self, image, name,user=0,admin_dict={}): # 0: student, 1: admin, 2:visitor
+        model.eval()
         with torch.no_grad():
-            embedding = self.forward_one(image)
-        if admin_bool:
+            embedding = model.forward_one(image)
+        if user == 1:
             self.admin_embeddings[name] = embedding
             self.admin_details[name] = admin_dict
             with open(r'static/admin_user\admin_embeddings.pkl', 'wb') as f:
                 pickle.dump(self.admin_embeddings, f)
+            
+            sql_insert = '''
+                INSERT INTO UserAdmin (Name, Major, IDNumber, Email, Address, Phone, LinkedIn,IMG_SCR)
+                VALUES (?, ?, ?, ?, ?, ?, ?,?)
+                '''
+            temp_list = [name]
+            for val in admin_dict.values():
+                temp_list.append(val)
+            values = temp_list
+            self.cursor.execute(sql_insert, values)
+            self.connection.commit()
+        elif user == 2:
+            self.visiter_embeddings[name] = embedding
+            self.visiter_details[name] = admin_dict
+            with open(r'static/visiter_user\visiter_embeddings.pkl', 'wb') as f:
+                pickle.dump(self.visiter_embeddings, f)
 
-            with open(r'static/admin_user\admin_details.pkl', 'wb') as f:
-                pickle.dump(self.admin_details, f)
+            sql_insert = '''
+                INSERT INTO UserVisiter (Name, Major, IDNumber, Email, Address, Phone, LinkedIn,IMG_SCR)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                '''
+            temp_list = [name]
+            for val in admin_dict.values():
+                temp_list.append(val)
+            values = temp_list
+            self.cursor.execute(sql_insert, values)
+            self.connection.commit()
         else:
             self.authorized_embeddings[name] = embedding
-    
-    def verify_autherisation(self, image, threshold=0.5,admin_bool=False):
-        self.eval()
+            self.authorized_details[name] = admin_dict
+            with open(r'static/authorized_user\authorized_embeddings.pkl', 'wb') as f:
+                pickle.dump(self.authorized_embeddings, f)
+
+            sql_insert = '''
+                INSERT INTO UserStudent (Name, Major, IDNumber, Email, Address, Phone, LinkedIn,IMG_SCR)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                '''
+            temp_list = [name]
+            for val in admin_dict.values():
+                temp_list.append(val)
+            values = temp_list
+            self.cursor.execute(sql_insert, values)
+            self.connection.commit()
+
+    def verify_autherisation(self, image, threshold=0.3,user=0):
+        model.eval()
         with torch.no_grad():
-            embedding_new = self.forward_one(image)
+            embedding_new = model.forward_one(image)
 
         closest_distance = float('inf')
         closest_user = None
         embeddings = self.authorized_embeddings
-        if admin_bool:
+        if user==1:
             embeddings = self.admin_embeddings
+        elif user==2:
+            embeddings = self.visiter_embeddings
         for user, embedding in embeddings.items():
             distance = torch.pairwise_distance(embedding_new, embedding).item()
             app.logger.debug(f"User: {user}, Distance: {distance}")
@@ -104,33 +191,70 @@ def transform_image(image):
     ])
     return transform(image).unsqueeze(0)
 
+def crop_img():
+    success, frame = camera.read()
+    if not success:
+        app.logger.error("Camera failed to capture an image.")
+        return jsonify({"error": "Failed to capture image from camera."}), 500
+    
+    faces = detector.detect_faces(frame)
+    if len(faces) == 0:
+        app.logger.warning("No face detected in the captured frame.")
+        return jsonify({"error": "No face detected in the frame!"}), 400
 
+    face = faces[0]
+    if 'box' in face:  
+        x, y, w, h = face['box']  
+        cropped_face = frame[y:y+h, x:x+w]
+        cropped_face = cv2.resize(cropped_face, (224, 224))
+        return cropped_face
+    else:
+        app.logger.warning("Face detection did not return the expected bounding box format.")
+        return jsonify({"error": "Face detection failed to return a valid bounding box."}), 500
+
+def delete_all_files_in_folder(folder_path):
+    try:
+        if not os.path.exists(folder_path):
+            print(f"Folder '{folder_path}' does not exist.")
+            return
+        
+        for item in os.listdir(folder_path):
+            item_path = os.path.join(folder_path, item)
+            
+            if os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+            else:
+                os.remove(item_path)
+        
+        print(f"All contents of '{folder_path}' have been deleted.")
+    
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 app = Flask(__name__)
 camera = cv2.VideoCapture(0)
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-save_folder = 'authorized_user_images'
-if not os.path.exists(save_folder):
-    os.makedirs(save_folder)
+detector = MTCNN()
 
 if not os.path.exists('static/admin_user'):
     os.makedirs('static/admin_user')
 
-for file_name in os.listdir(save_folder):
-    file_path = os.path.join(save_folder, file_name)
+if not os.path.exists('static/authorized_user'):
+    os.makedirs('static/authorized_user')
 
-    if os.path.isfile(file_path):
-        os.remove(file_path)
+if not os.path.exists('static/visiter_user'):
+    os.makedirs('static/visiter_user')
 
+load = Load_sql()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = SiameseNetwork()
-state_dict = torch.load("resnet50.pkl", weights_only=True)
+state_dict = torch.load("resnet50_2.pkl", weights_only=True)
 model.load_state_dict(state_dict)
 model = model.to(device)
 model.eval()
 
 admin_user_temp = ""
+user_type_temp = 0
 
 def generate_frames():
     while True:
@@ -139,12 +263,13 @@ def generate_frames():
             break
 
         frame = cv2.flip(frame, 1)
-        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        faces = detector.detect_faces(frame)
         
-        for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        
+        for face in faces:
+            if 'box' in face:
+                x, y, w, h = face['box']
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
         _, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
 
@@ -159,43 +284,57 @@ def index():
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/add_user')
+def add_user():
+    cropped_face = crop_img()
+    mirrored_face = cv2.flip(cropped_face, 1)
+
+    try:
+        cv2.imwrite('static/temp_img/test.jpg', mirrored_face)
+    except:
+        file_path = 'static/temp_img/test.jpg'
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"File {file_path} has been deleted.")
+        else:
+            print(f"File {file_path} does not exist.")
+        return jsonify({"message": "No face!"})
+
+    return jsonify({"message": "photo taken!"})
+
+@app.route('/add_user_verify',methods=['GET'])
+def add_user_verify():
+    return render_template('add_user.html')
+
 @app.route('/authorize_user', methods=['POST'])
 def authorize_user():
-    name = request.form.get('name')  
+    form_data = request.form.to_dict()
+    name = form_data.get('name')
+    if not form_data:
+        return jsonify({"error": "data is required!"}), 400
     if not name:
         return jsonify({"error": "Name is required!"}), 400
-
-    success, frame = camera.read()
-    if not success:
-        return jsonify({"error": "Failed to capture image from camera."}), 500
     
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
 
-    if len(faces) == 0:
-        return jsonify({"error": "No face detected in the frame!"}), 400
-
-    x, y, w, h = faces[0]
-    cropped_face = frame[y:y+h, x:x+w]
-    cropped_face = cv2.resize(cropped_face, (224, 224)) 
+    autherized_dict = {'major':form_data.get('major'),'id_number':form_data.get('id_number'),
+                  "email":form_data.get('email'),'address':form_data.get('address'),
+                  "phone":form_data.get('phone'),'linkedin':form_data.get('linkedin'),'image_src':f'static/authorized_user/{name}.jpg'}
+   
+    cropped_face =  cv2.imread('static/temp_img/test.jpg')
 
     authorized_image = cv2.cvtColor(cropped_face, cv2.COLOR_BGR2RGB)
+    app.logger.debug(f"Verify image shape before transformation: {authorized_image.shape}")
     authorized_image = transform_image(authorized_image)
     authorized_image = authorized_image.to(device)
-    model.autherise_user(authorized_image,name)
+    load.autherise_user(authorized_image,name,0,autherized_dict)
 
-    temp_image_path = os.path.join('authorized_user_images', f"{name}.jpg") 
+    temp_image_path = os.path.join('static/authorized_user', f"{name}.jpg") 
     cv2.imwrite(temp_image_path, cropped_face)
 
     return jsonify({"message": "User authorized successfully!", "image_path": temp_image_path})
 
 @app.route('/admin_user', methods=['POST'])
 def admin_user():
-    success, frame = camera.read()
-    if not success:
-        app.logger.error("Camera failed to capture an image.")
-        return jsonify({"error": "Failed to capture image from camera."}), 500
-
     form_data = request.form.to_dict()
     name = form_data.get('name')
     if not form_data:
@@ -208,74 +347,137 @@ def admin_user():
                   "email":form_data.get('email'),'address':form_data.get('address'),
                   "phone":form_data.get('phone'),'linkedin':form_data.get('linkedin'),'image_src':f'static/admin_user/{name}.jpg'}
    
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-
-    if len(faces) == 0:
-        app.logger.warning("No face detected in the captured frame.")
-        return jsonify({"error": "No face detected in the frame!"}), 400
-
-    x, y, w, h = faces[0]
-    cropped_face = frame[y:y+h, x:x+w]
-    cropped_face = cv2.resize(cropped_face, (224, 224)) 
+    cropped_face = cv2.imread('static/temp_img/test.jpg')
 
     authorized_image = cv2.cvtColor(cropped_face, cv2.COLOR_BGR2RGB)
     app.logger.debug(f"Verify image shape before transformation: {authorized_image.shape}")
     authorized_image = transform_image(authorized_image)
     authorized_image = authorized_image.to(device)
-    model.autherise_user(authorized_image,name,True,admin_dict)
+    load.autherise_user(authorized_image,name,1,admin_dict)
 
     temp_image_path = os.path.join('static/admin_user', f"{name}.jpg") 
     cv2.imwrite(temp_image_path, cropped_face)
 
     return jsonify({"message": "User authorized successfully!", "image_path": temp_image_path})
 
+@app.route('/visiter_user', methods=['POST'])
+def visiter_user():
+    form_data = request.form.to_dict()
+    name = form_data.get('name')
+    if not form_data:
+        return jsonify({"error": "data is required!"}), 400
+    if not name:
+        return jsonify({"error": "Name is required!"}), 400
+    
+
+    visiter_dict = {'major':form_data.get('major'),'id_number':form_data.get('id_number'),
+                  "email":form_data.get('email'),'address':form_data.get('address'),
+                  "phone":form_data.get('phone'),'linkedin':form_data.get('linkedin'),'image_src':f'static/admin_user/{name}.jpg'}
+    
+    cropped_face = cv2.imread('static/temp_img/test.jpg')
+
+    app.logger.debug(f"Verify image shape before transformation: {authorized_image.shape}")
+    authorized_image = transform_image(authorized_image)
+    authorized_image = authorized_image.to(device)
+    load.autherise_user(authorized_image,name,2,visiter_dict)
+
+    temp_image_path = os.path.join('static/visiter_user', f"{name}.jpg") 
+    cv2.imwrite(temp_image_path, cropped_face)
+
+    return jsonify({"message": "User authorized successfully!", "image_path": temp_image_path})
+
 @app.route('/verify_user', methods=['POST'])
 def verify_user():
-    global admin_user_temp
-    success, frame = camera.read()
-    if not success:
-        return jsonify({"error": "Failed to capture image from camera."}), 500
-    
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    cropped_face = crop_img()
+    try:
+        cv2.imwrite('static/temp_img/test.jpg', cropped_face)
+    except:
+        file_path = 'static/temp_img/test.jpg'
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"File {file_path} has been deleted.")
+        else:
+            print(f"File {file_path} does not exist.")
+        return jsonify({"message": "No face!"})
+    return jsonify({"message": "verify photo taken!"})
 
-    if len(faces) == 0:
-        return jsonify({"error": "No face detected in the frame!"}), 400
+@app.route('/verify_user_post',methods=['GET'])
+def verify_user_post():
+    return render_template('verify_user.html')
 
-    x, y, w, h = faces[0]
-    cropped_face = frame[y:y+h, x:x+w]
-
-    cropped_face = cv2.resize(cropped_face, (224, 224))  
+@app.route('/verify_user_post2', methods=['POST'])
+def verify_user_post2():
+    global admin_user_temp, user_type_temp
+    cropped_face = cv2.imread('static/temp_img/test.jpg')
 
     verify_image = cv2.cvtColor(cropped_face, cv2.COLOR_BGR2RGB)
     verify_image = transform_image(verify_image)
     verify_image = verify_image.to(device)
     user = ''
-    user, _ = model.verify_autherisation(verify_image,0.5)  
+    user, _ = load.verify_autherisation(verify_image,0.5,0)  
     admin_user = ''
-    admin_user, _ = model.verify_autherisation(verify_image,0.5,True) 
+    admin_user, _ = load.verify_autherisation(verify_image,0.5,1) 
+    visiter_user = ''
+    visiter_user, _ = load.verify_autherisation(verify_image,0.5,2) 
       
     if admin_user:
         admin_user_temp = admin_user
-        return jsonify({"message": f"Admin user: {admin_user}!"})
+        user_type_temp = 1
+        return jsonify({"message": f"Admin user: {admin_user_temp}!"})
         
     if user:
-        return jsonify({"message": f"Autherised user: {user}!"})
+        admin_user_temp = user
+        user_type_temp = 0
+        return jsonify({"message": f"Autherised user: {admin_user_temp}!"})
+    
+    if visiter_user:
+        admin_user_temp = visiter_user
+        user_type_temp = 2
+        return jsonify({"message": f"Visitor user: {admin_user_temp}!"})
 
     return jsonify({"message": "Unautherised user!"})
  
 @app.route('/post_verification')
 def post_verification():
-    global admin_user_temp
+    global admin_user_temp, user_type_temp
     name = admin_user_temp
+    user_type = user_type_temp
     admin_user_temp = ''
+    user_type_temp = ''
 
-    return render_template('admin_id.html', name=name, major= model.admin_details[name]['major'], id_number= model.admin_details[name]['id_number'], 
-                           email=model.admin_details[name]['email'], address =model.admin_details[name]['address'], 
-                           phone=model.admin_details[name]['phone'], linkedin =model.admin_details[name]['linkedin'], image_src = model.admin_details[name]['image_src'])
+    if user_type == 0:
+        details = load.authorized_details
+    elif user_type == 1:
+        details = load.admin_details
+    elif user_type == 2:
+        details = load.visiter_details
+    return render_template('admin_id.html', name=name, major= details[name]['major'], id_number= details[name]['id_number'], 
+                        email=details[name]['email'], address =details[name]['address'], 
+                        phone=details[name]['phone'], linkedin =details[name]['linkedin'], image_src = details[name]['image_src'])
+
+@app.route('/reset',methods = ['POST'])
+def reset1():
+    delete_all_files_in_folder('static/admin_user')
+    delete_all_files_in_folder('static/authorized_user')
+    delete_all_files_in_folder('static/visiter_user')
+
+    load.visiter_embeddings = {}
+    load.authorized_embeddings = {}
+    load.admin_embeddings = {}
+    load.admin_details = {}
+    load.authorized_details = {}
+    load.visiter_details = {}
+
+    sql_command = f"DELETE FROM UserAdmin"
+    load.cursor.execute(sql_command)
+    sql_command = f"DELETE FROM UserStudent"
+    load.cursor.execute(sql_command)
+    sql_command = f"DELETE FROM UserVisiter"
+    load.cursor.execute(sql_command)
+    load.connection.commit()
+    return jsonify({"message": "Done reset!"})
+ 
 
 
 if __name__ == "__main__":
     app.run(debug=True, threaded=True)
-    'admin_user'

@@ -1,0 +1,4 @@
+1) the api folder can act like a stand alone folder, where you can run the "app.py" file and the api works.
+note: the api assumes the data base and 3 tables exisit in the sql server (please update the server connection details as well).
+
+2) 

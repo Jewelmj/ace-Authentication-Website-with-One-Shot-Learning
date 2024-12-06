@@ -13,12 +13,10 @@ body, html {
 }
 
 .bg-gradient {
-    background: linear-gradient(to bottom, #8e44ad 10%, #f39c12 90%); 
+    background: linear-gradient(135deg, #000000, #434343);
 }
 
-
 .heading-bg {
-    background-color: #de7403;
     padding: 10px; 
     border-radius: 5px; 
     text-align: center; 
@@ -41,7 +39,7 @@ h1 {
 }
 
 button:hover, .btn:hover, .btn-purple:hover {
-    background-color: #0056b3;
+    background-color: #000000;
 }
 
 .btn-purple {
