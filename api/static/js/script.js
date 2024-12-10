@@ -248,7 +248,6 @@ function verifyUser(event) {
 }
 
 function verifyUserPost(event) {
-
     fetch('/verify_user_post2', {
         method: 'POST',
     })
@@ -258,25 +257,40 @@ function verifyUserPost(event) {
             console.log("Server response:", data[0].message);
             alert(data[0].message);
 
-            if ((data[0].message.startsWith("Admin user:")) || (data[0].message.startsWith("Autherised")) || (data[0].message.startsWith("Visitor"))) {
-                admin_user_temp = data[1].data.admin_user_temp;
-                user_type_temp = data[1].data.user_type_temp;
-                details = data[1].data.details;
-                console.log(admin_user_temp)
-                console.log(user_type_temp)
-                window.location.href = "/post_verification?admin_user_temp="+admin_user_temp+'&user_type_temp='+user_type_temp;
+            if (data[0].message.startsWith("Admin user:") || 
+                data[0].message.startsWith("Autherised") || 
+                data[0].message.startsWith("Visitor")) {
 
-                // fetch('/post_verification', {
-                //     method: 'POST',
-                //     headers: {
-                //         'Content-Type': 'application/json'
-                //     },
-                //     body: JSON.stringify({
-                //         admin_user_temp: admin_user_temp,
-                //         user_type_temp: user_type_temp
-                //     })
-                // })
-            } 
+                const admin_user_temp = data[1].data.admin_user_temp;
+                const user_type_temp = data[1].data.user_type_temp;
+                const details = data[1].data.details;
+
+                console.log(admin_user_temp);
+                console.log(user_type_temp);
+
+                fetch('/post_verification', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        admin_user_temp: admin_user_temp,
+                        user_type_temp: user_type_temp
+                    })
+                })
+                .then(response => {
+                    if (response.ok) {
+                        return response.text().then(html => {
+                            document.open();
+                            document.write(html);
+                            document.close();
+                        });
+                    } else {
+                        console.error('Failed to load the page');
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+            }
         }
     })
     .catch(error => console.error('Error:', error));

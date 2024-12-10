@@ -443,29 +443,20 @@ def verify_user_post2():
 
     return jsonify({"message": "Unautherised user!"},{'data':{"admin_user_temp":admin_user_temp,"user_type_temp":user_type_temp}})
  
-@app.route('/post_verification', methods=['GET'])  #POST
+@app.route('/post_verification', methods=['POST'])
 def post_verification():
-    # data = request.get_json()
-    # name = data.get('admin_user_temp')
-    # user_type= data.get('user_type_temp')
-    name = request.args.get('admin_user_temp')
-    user_type= request.args.get('user_type_temp')
+    data = request.get_json()
+    name = data.get('admin_user_temp')
+    user_type= data.get('user_type_temp')
     print(name,user_type)
 
-    # if user_type == 0:
-    #     details = load.authorized_details
-    # elif user_type == 1:
-    #     details = load.admin_details
-    # elif user_type == 2:
-    #     details = load.visiter_details
-    # print(details)
-
-    if user_type == '0':
+    if user_type == 0:
         details = load.authorized_details
-    elif user_type == '1':
+    elif user_type == 1:
         details = load.admin_details
-    elif user_type == '2':
+    elif user_type == 2:
         details = load.visiter_details
+    print(details)
     return render_template('admin_id.html', name=name, major= details[name]['major'], id_number= details[name]['id_number'], 
                         email=details[name]['email'], address =details[name]['address'], 
                         phone=details[name]['phone'], linkedin =details[name]['linkedin'], image_src = details[name]['image_src'])
